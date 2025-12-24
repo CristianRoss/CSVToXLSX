@@ -7,6 +7,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.NotDirectoryException;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Main {
 
     private static final List<File> files = new ArrayList<>();
+    private static final int MAX_ROWS_PER_FILE = 600_000;
+    private static Workbook workbook;
+    private static Sheet sheet;
+    private static FileOutputStream fos;
+
+    private static final AtomicInteger globalRowIndex = new AtomicInteger(0);
+    private static final AtomicInteger fileIndex = new AtomicInteger(1);
+    private static boolean headerWritten = false;
+
+    private static String outputDir;
+
 
     public static void main(String[] args) {
         if (args.length < 2) {
@@ -66,42 +78,55 @@ public class Main {
         }
     }
 
-    private static void csvToXlsx(File outputFile) {
+    private static void createNewWorkbook() throws IOException {
+        workbook = new XSSFWorkbook();
+        sheet = workbook.createSheet("data");
+        fos = new FileOutputStream(
+                new File(outputDir, "output_" + fileIndex.getAndIncrement() + ".xlsx")
+        );
 
-        try (
-                Workbook workbook = new XSSFWorkbook();
-                FileOutputStream fos = new FileOutputStream(outputFile)
-        ) {
-            Sheet sheet = workbook.createSheet("data");
+        globalRowIndex.set(0);
+        headerWritten = false;
+    }
+
+    private static void closeWorkbook() throws IOException {
+        workbook.write(fos);
+        fos.close();
+        workbook.close();
+    }
+
+
+    private static void csvToXlsx(File outputFolder) {
+
+        outputDir = outputFolder.getAbsolutePath();
+
+        try {
+            createNewWorkbook();
 
             ExecutorService executor =
                     Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
-            AtomicInteger rowIndex = new AtomicInteger(0);
-            AtomicBoolean headerWritten = new AtomicBoolean(false);
-
             for (File csvFile : files) {
-                executor.submit(() -> processCsvFile(csvFile, sheet, rowIndex, headerWritten));
+                executor.submit(() -> processCsvFile(csvFile));
             }
 
             executor.shutdown();
             executor.awaitTermination(1, TimeUnit.HOURS);
 
-            workbook.write(fos);
+            closeWorkbook();
 
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static void processCsvFile(
-            File csvFile,
-            Sheet sheet,
-            AtomicInteger rowIndex,
-            AtomicBoolean headerWritten
-    ) {
 
-        try (Reader reader = new FileReader(csvFile)) {
+    private static void processCsvFile(File csvFile) {
+
+        try (Reader reader = new InputStreamReader(
+                new FileInputStream(csvFile),
+                StandardCharsets.UTF_16LE
+        )) {
 
             Iterable<CSVRecord> records = CSVFormat.DEFAULT.parse(reader);
 
@@ -109,16 +134,22 @@ public class Main {
 
                 SheetWriteLock.LOCK.lock();
                 try {
-                    // Header handling (atomic)
-                    if (record.getRecordNumber() == 1) {
-                        if (headerWritten.get()) {
-                            continue; // skip header
-                        }
-                        headerWritten.set(true); // first header wins
+                    // Rotate file BEFORE exceeding limit
+                    if (globalRowIndex.get() >= MAX_ROWS_PER_FILE) {
+                        closeWorkbook();
+                        createNewWorkbook();
                     }
 
-                    int currentRow = rowIndex.getAndIncrement();
-                    Row row = sheet.createRow(currentRow);
+                    // Header logic (per file)
+                    if (record.getRecordNumber() == 1) {
+                        if (headerWritten) {
+                            continue;
+                        }
+                        headerWritten = true;
+                    }
+
+                    int rowNum = globalRowIndex.getAndIncrement();
+                    Row row = sheet.createRow(rowNum);
 
                     for (int i = 0; i < record.size(); i++) {
                         row.createCell(i).setCellValue(record.get(i));
@@ -133,6 +164,7 @@ public class Main {
             throw new RuntimeException("Error processing file: " + csvFile.getName(), e);
         }
     }
+
 
 
 
