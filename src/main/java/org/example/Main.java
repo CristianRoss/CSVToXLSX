@@ -3,39 +3,36 @@ package org.example;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.NotDirectoryException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
 
     private static final List<File> files = new ArrayList<>();
     private static final int MAX_ROWS_PER_FILE = 600_000;
+
     private static Workbook workbook;
     private static Sheet sheet;
     private static FileOutputStream fos;
 
-    private static final AtomicInteger globalRowIndex = new AtomicInteger(0);
-    private static final AtomicInteger fileIndex = new AtomicInteger(1);
+    private static int globalRowIndex = 0;
+    private static int fileIndex = 1;
     private static boolean headerWritten = false;
 
     private static String outputDir;
 
-
     public static void main(String[] args) {
         if (args.length < 2) {
-            System.out.println("Programa deve ser executado : java - jar <arquivo.jar> <diretorio dos csvs> <diretorio do destino>");
-            Thread.currentThread().interrupt();
+            System.out.println(
+                    "Programa deve ser executado : java -jar <arquivo.jar> <diretorio dos csvs> <diretorio do destino>"
+            );
+            return;
         }
 
         String inputFolder = args[0];
@@ -56,10 +53,9 @@ public class Main {
             return;
         }
 
-        File outputFile = new File(outputFolder);
-        csvToXlsx(outputFile);
+        csvToXlsx(new File(outputFolder));
 
-        System.out.println("XLSX created successfully: " + outputFile.getAbsolutePath());
+        System.out.println("XLSX created successfully.");
     }
 
     private static void verifyDirectory(String path) throws NotDirectoryException {
@@ -71,21 +67,26 @@ public class Main {
 
     private static void loadFiles(String folder) {
         File dir = new File(folder);
-        for (File f : dir.listFiles()) {
-            if (f != null && f.getName().endsWith(".csv")) {
+        File[] list = dir.listFiles();
+
+        if (list == null) return;
+
+        for (File f : list) {
+            if (f.isFile() && f.getName().endsWith(".csv")) {
                 files.add(f);
             }
         }
     }
 
     private static void createNewWorkbook() throws IOException {
-        workbook = new XSSFWorkbook();
+        workbook =new SXSSFWorkbook(100);
         sheet = workbook.createSheet("data");
+
         fos = new FileOutputStream(
-                new File(outputDir, "output_" + fileIndex.getAndIncrement() + ".xlsx")
+                new File(outputDir, "output_" + fileIndex++ + ".xlsx")
         );
 
-        globalRowIndex.set(0);
+        globalRowIndex = 0;
         headerWritten = false;
     }
 
@@ -95,23 +96,15 @@ public class Main {
         workbook.close();
     }
 
-
     private static void csvToXlsx(File outputFolder) {
-
         outputDir = outputFolder.getAbsolutePath();
 
         try {
             createNewWorkbook();
 
-            ExecutorService executor =
-                    Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-
             for (File csvFile : files) {
-                executor.submit(() -> processCsvFile(csvFile));
+                processCsvFile(csvFile);
             }
-
-            executor.shutdown();
-            executor.awaitTermination(1, TimeUnit.HOURS);
 
             closeWorkbook();
 
@@ -119,7 +112,6 @@ public class Main {
             throw new RuntimeException(e);
         }
     }
-
 
     private static void processCsvFile(File csvFile) {
 
@@ -138,31 +130,24 @@ public class Main {
 
             for (CSVRecord record : records) {
 
-                SheetWriteLock.LOCK.lock();
-                try {
-                    // Rotate file BEFORE exceeding limit
-                    if (globalRowIndex.get() >= MAX_ROWS_PER_FILE) {
-                        closeWorkbook();
-                        createNewWorkbook();
+                // Rotate file BEFORE exceeding limit
+                if (globalRowIndex >= MAX_ROWS_PER_FILE) {
+                    closeWorkbook();
+                    createNewWorkbook();
+                }
+
+                // Header handling
+                if (record.getRecordNumber() == 1) {
+                    if (headerWritten) {
+                        continue;
                     }
+                    headerWritten = true;
+                }
 
-                    // Header logic (per file)
-                    if (record.getRecordNumber() == 1) {
-                        if (headerWritten) {
-                            continue;
-                        }
-                        headerWritten = true;
-                    }
+                Row row = sheet.createRow(globalRowIndex++);
 
-                    int rowNum = globalRowIndex.getAndIncrement();
-                    Row row = sheet.createRow(rowNum);
-
-                    for (int i = 0; i < record.size(); i++) {
-                        row.createCell(i).setCellValue(record.get(i));
-                    }
-
-                } finally {
-                    SheetWriteLock.LOCK.unlock();
+                for (int i = 0; i < record.size(); i++) {
+                    row.createCell(i).setCellValue(record.get(i));
                 }
             }
 
@@ -170,8 +155,4 @@ public class Main {
             throw new RuntimeException("Error processing file: " + csvFile.getName(), e);
         }
     }
-
-
-
-
 }
