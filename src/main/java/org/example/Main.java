@@ -56,7 +56,7 @@ public class Main {
             return;
         }
 
-        File outputFile = new File(outputFolder, "output.xlsx");
+        File outputFile = new File(outputFolder);
         csvToXlsx(outputFile);
 
         System.out.println("XLSX created successfully: " + outputFile.getAbsolutePath());
