@@ -128,7 +128,13 @@ public class Main {
                 StandardCharsets.UTF_16LE
         )) {
 
-            Iterable<CSVRecord> records = CSVFormat.DEFAULT.parse(reader);
+            CSVFormat csvFormat = CSVFormat.DEFAULT.builder()
+                    .setDelimiter('\t')
+                    .setTrim(true)
+                    .setIgnoreEmptyLines(true)
+                    .get();
+
+            Iterable<CSVRecord> records = csvFormat.parse(reader);
 
             for (CSVRecord record : records) {
 
