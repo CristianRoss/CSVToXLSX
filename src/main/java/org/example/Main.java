@@ -147,12 +147,13 @@ public class Main {
 
                 // Header handling
                 if (record.getRecordNumber() == 1) {
-                    if (headerWritten) {
+                    if (!headerWritten) {
                         headerColumns = new LinkedList<>();
                         for (int i = 0; i < record.size(); i++) {
                             headerColumns.add(record.get(i));
                         }
-
+                        headerWritten=true;
+                    }else {
                         // Write header to the first file
                         Row headerRow = sheet.createRow(globalRowIndex++);
                         for (int i = 0; i < headerColumns.size(); i++) {
