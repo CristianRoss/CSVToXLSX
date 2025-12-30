@@ -10,6 +10,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.NotDirectoryException;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 
 public class Main {
@@ -26,6 +27,9 @@ public class Main {
     private static boolean headerWritten = false;
 
     private static String outputDir;
+
+    private static List<String> headerColumns = null;
+
 
     public static void main(String[] args) {
         if (args.length < 2) {
@@ -87,7 +91,12 @@ public class Main {
         );
 
         globalRowIndex = 0;
-        headerWritten = false;
+        if (headerColumns != null) {
+            Row headerRow = sheet.createRow(globalRowIndex++);
+            for (int i = 0; i < headerColumns.size(); i++) {
+                headerRow.createCell(i).setCellValue(headerColumns.get(i));
+            }
+        }
     }
 
     private static void closeWorkbook() throws IOException {
@@ -139,9 +148,18 @@ public class Main {
                 // Header handling
                 if (record.getRecordNumber() == 1) {
                     if (headerWritten) {
-                        continue;
+                        headerColumns = new LinkedList<>();
+                        for (int i = 0; i < record.size(); i++) {
+                            headerColumns.add(record.get(i));
+                        }
+
+                        // Write header to the first file
+                        Row headerRow = sheet.createRow(globalRowIndex++);
+                        for (int i = 0; i < headerColumns.size(); i++) {
+                            headerRow.createCell(i).setCellValue(headerColumns.get(i));
+                        }
                     }
-                    headerWritten = true;
+                    continue;
                 }
 
                 Row row = sheet.createRow(globalRowIndex++);
