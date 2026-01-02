@@ -153,13 +153,12 @@ public class Main {
                             headerColumns.add(record.get(i));
                         }
                         headerWritten=true;
-                    }else {
+                    }
                         // Write header to the first file
                         Row headerRow = sheet.createRow(globalRowIndex++);
                         for (int i = 0; i < headerColumns.size(); i++) {
                             headerRow.createCell(i).setCellValue(headerColumns.get(i));
                         }
-                    }
                     continue;
                 }
 
